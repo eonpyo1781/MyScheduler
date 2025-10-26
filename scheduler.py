@@ -5,20 +5,26 @@ from PySide6.QtWidgets import (
 )
 from PySide6.QtCore import Qt, QSize
 from functools import partial
-import json
-import sys
+from datetime import date, timedelta
+import os, json, sys
 
-
-week = ["월", "화", "수", "목", "금", "토", "일"]
+week = ["Schedule", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+today = date.today().weekday()
+WINDOW_WIDTH = 700
+WINDOW_HEIGHT = 600
+CHECKED_COLOR = "lightblue"
+UNCHECKED_COLOR = "lightgray"
 
 class MainWindow(QMainWindow):
-    def __init__(self, schedules):
+    def __init__(self):
         super().__init__()
 
+        self.schedule_count = 0
         self.setWindowTitle("My Scheduler")
-        self.setFixedSize(QSize(700, 600))
+        self.setFixedSize(QSize(WINDOW_WIDTH, WINDOW_HEIGHT))
         self.defaultStyle = "font-size: 16px; text-align: center; padding: 0px; margin: 0px;"
-        self.schedule_json = schedules
+        self.scheModel = ScheduleModel("schedules.json")
+
         # 메인 위젯 설정
         central_widget = QWidget()
         self.setCentralWidget(central_widget)
@@ -28,27 +34,29 @@ class MainWindow(QMainWindow):
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
 
+        top_layout = QHBoxLayout()
         # 고정: 상단 Add Schedule 버튼
         add_schedule_button = QPushButton("Add Schedule")
-        add_schedule_button.setFixedSize(700, 40)
-        add_schedule_button.setStyleSheet(self.defaultStyle)
+        add_schedule_button.setObjectName("TopScheduleButton")
         add_schedule_button.clicked.connect(self.add_schedule)
-        main_layout.addWidget(add_schedule_button, alignment=Qt.AlignTop)
+
+        monday = date.today() - timedelta(days=date.today().weekday())
+        sunday = monday + timedelta(days=6)
+        date_label = QPushButton(f"{monday} ~ {sunday}")
+        date_label.setObjectName("TopScheduleButton")
+        top_layout.addWidget(add_schedule_button)
+        top_layout.addWidget(date_label)
+        main_layout.addLayout(top_layout)
 
         # 고정: 요일 레이블
         labels = []
         week_layout = QHBoxLayout()
-        labels.append(QLabel("요일"))
-        labels[0].setStyleSheet(self.defaultStyle + "background-color: lightgray;")
-        week_layout.addWidget(labels[0])
-        for i in range(7):
+
+        for i in range(8):
             labels.append(QLabel(week[i]))
-            labels[i+1].setStyleSheet(self.defaultStyle + "background-color: lightgray;")
-            week_layout.addWidget(labels[i+1])
-
-        for j in range(8):
-            labels[j].setAlignment(Qt.AlignCenter)
-
+            labels[i].setObjectName("WeekLabel")
+            labels[i].setAlignment(Qt.AlignCenter)
+            week_layout.addWidget(labels[i])
         main_layout.addLayout(week_layout)
 
         # 스크롤 가능한 영역 만들기
@@ -64,36 +72,9 @@ class MainWindow(QMainWindow):
         self.scroll_area.setWidget(self.scroll_content)
 
         # 기존 스케줄 불러오기
-        if schedules is not None:
-            for schedule in schedules:
-                schedule_name = schedule["name"].replace(" ", "\n")
-                row_layout = QHBoxLayout()
-                label = QLabel(schedule_name)
-                label.setStyleSheet(self.defaultStyle)
-                label.setAlignment(Qt.AlignCenter)
-                row_layout.addWidget(label)
-
-                for i in range(7):
-                    button = QPushButton()
-                    button.setMinimumHeight(50)
-                    button.setMinimumWidth(80)
-                    button.setSizePolicy(
-                        QPushButton().sizePolicy().horizontalPolicy(),
-                        QPushButton().sizePolicy().verticalPolicy()
-                    )
-                    if schedule["days"][i] == 1:
-                        button.setStyleSheet("background-color: lightblue;")
-                    else:
-                        button.setStyleSheet("background-color: white;")
-                    row_layout.addWidget(button)
-
-                    # ✅ 버튼에 스케줄 인덱스와 요일 인덱스 저장
-                    button.setProperty("row_index", self.schedule_json.index(schedule))
-                    button.setProperty("day_index", i)
-                    # ✅ 클릭 연결
-                    button.clicked.connect(partial(self.is_checked, button))
-
-                self.scroll_layout.addLayout(row_layout)
+        if self.scheModel.schedules is not None:
+            for schedule in self.scheModel.schedules:
+                self.make_schedule_button(schedule["name"], schedule["days"])
 
     def add_schedule(self):
         dig = QDialog(self)
@@ -112,38 +93,50 @@ class MainWindow(QMainWindow):
         if dig.exec() == QDialog.Accepted:
             schedule_name = label.text()
 
-            self.schedule_json.append({"name": schedule_name, "days": [0, 0, 0, 0, 0, 0, 0]})
-            self.make_schedule_button(schedule_name)
+            self.scheModel.schedules.append({"name": schedule_name, "days": [0, 0, 0, 0, 0, 0, 0]})
+            self.make_schedule_button(schedule_name, [0, 0, 0, 0, 0, 0, 0])
 
-            save_schedules("./schedules.json", self.schedule_json)
+            self.scheModel.save_schedules(self.scheModel.schedules)
 
-    def make_schedule_button(self, schedule_name: str):
+    def make_schedule_button(self, schedule_name: str, schedule_done):
         print(f"Schedule added: {schedule_name}")
 
-        row_index = len(self.schedule_json) - 1
         schedule_name = schedule_name.replace(" ", "\n")
         row_layout = QHBoxLayout()
+        row_layout.setSpacing(5)  # 버튼 사이 간격
+        row_layout.setContentsMargins(0, 0, 0, 0)  # 주변 여백 제거
+
         label = QLabel(schedule_name)
-        label.setStyleSheet(self.defaultStyle)
+        label.setObjectName("ScheduleName")
         label.setAlignment(Qt.AlignCenter)
         row_layout.addWidget(label)
 
         for day_index in range(7):
             button = QPushButton('')
-            button.setMinimumHeight(50)
-            button.setMinimumWidth(80)
 
-            button.setProperty("row_index", row_index)
+            if(day_index < today and schedule_done[day_index] == 0):
+                button.setObjectName("PrevDayScheduleButton")
+            else:
+                button.setObjectName("DayScheduleButton")
+            button.setCheckable(True)
+
+            if schedule_done[day_index] == 1:
+                button.setChecked(True)
+            else:
+                button.setChecked(False)
+
+            button.setSizePolicy(
+                QPushButton().sizePolicy().horizontalPolicy(),
+                QPushButton().sizePolicy().verticalPolicy()
+            )
+            button.setProperty("row_index", self.schedule_count)
             button.setProperty("day_index", day_index)
-
-            button.setStyleSheet("background-color: white;")
-
             button.clicked.connect(partial(self.is_checked, button))
-
+            
             row_layout.addWidget(button)
 
         self.scroll_layout.addLayout(row_layout)
-
+        self.schedule_count += 1
 
     def is_checked(self, button):
         row_index = button.property("row_index")
@@ -153,44 +146,54 @@ class MainWindow(QMainWindow):
             print("속성 정보 없음!")
             return
 
-        current = self.schedule_json[row_index]["days"][day_index]
+        current = self.scheModel.schedules[row_index]["days"][day_index]
         new_value = 0 if current == 1 else 1
-        self.schedule_json[row_index]["days"][day_index] = new_value
-
-        # 색상 업데이트
-        if new_value == 1:
-            button.setStyleSheet("background-color: lightblue;")
+        self.scheModel.schedules[row_index]["days"][day_index] = new_value
+                
+        if button.isChecked(): 
+            button.setChecked(True)
         else:
-            button.setStyleSheet("background-color: white;")
+            button.setChecked(False)
 
-        # 저장
-        save_schedules("./schedules.json", self.schedule_json)
+        self.scheModel.save_schedules(self.scheModel.schedules)
 
         print(f"Updated: row {row_index}, day {day_index} → {new_value}")
 
+class ScheduleModel:
+    def __init__(self, filename):
+        self.filename = os.path.join(os.path.dirname(__file__), filename)
+        self.schedules = self.load_schedules(filename)
 
-def load_schedules(filename):
-    try:
-        with open(filename, 'r', encoding='utf-8') as file:
-            schedules = json.load(file)
-            return schedules
-    except FileNotFoundError:
-        print("파일을 찾을 수 없습니다. 빈 리스트로 시작합니다.")
-        return []
-    except json.JSONDecodeError as e:
-        print(f"JSON 파싱 오류: {e}")
-        return []
+    def load_schedules(self, filename):
+        print(filename + " being loading.")
+        try:
+            with open(filename, 'r', encoding='utf-8') as file:
+                schedules = json.load(file)
+                return schedules
+        except FileNotFoundError:
+            print("파일을 찾을 수 없습니다. 빈 리스트로 시작합니다.")
+            return []
+        except json.JSONDecodeError as e:
+            print(f"JSON 파싱 오류: {e}")
+            return []
 
-
-def save_schedules(filename, schedules):
-    with open(filename, 'w', encoding='utf-8') as file:
-        json.dump(schedules, file, ensure_ascii=False, indent=4)
+    def save_schedules(self, schedules):
+        with open(self.filename, 'w', encoding='utf-8') as file:
+            json.dump(schedules, file, indent=None, ensure_ascii=False)
 
 def main():
-    schedules = load_schedules("./schedules.json")
-    print(schedules)
     app = QApplication(sys.argv)
-    window = MainWindow(schedules)
+
+    print(today)
+    try:
+        with open("style.qss", "r") as f:
+            style_sheet = f.read()
+        print("style.qss done.")
+        app.setStyleSheet(style_sheet)
+    except FileNotFoundError:
+        print("Warning: style.qss not found.")
+
+    window = MainWindow()
     window.show()
     sys.exit(app.exec())
 

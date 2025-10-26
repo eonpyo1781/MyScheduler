@@ -1,0 +1,46 @@
+* {
+    font-family: "Roboto";
+    font-size: 16px; 
+    text-align: center; 
+    padding: 0px;
+    margin: 0px;
+}
+
+QPushButton#DayScheduleButton:checked {
+    background-color: lightblue;
+}
+
+QPushButton#PrevDayScheduleButton:checked {
+    background-color: lightblue;
+}
+
+#TopScheduleButton {
+    min-width: 350px;
+    min-height: 40px;
+}
+
+#DayScheduleButton {
+    min-width: 80px;
+    max-width: 80px;
+    min-height: 50px;
+    max-height: 50px;
+    background-color: "white";
+}
+#PrevDayScheduleButton {
+    min-width: 80px;
+    max-width: 80px;
+    min-height: 50px;
+    max-height: 50px;
+    background-color: "red";
+}
+
+QLabel {
+    background-color: "lightgray";
+}
+
+QLabel#ScheduleName {
+    min-width: 80px;
+    max-width: 80px;
+    min-height: 50px;
+    max-height: 50px;
+}
